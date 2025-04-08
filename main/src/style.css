@@ -1,5 +1,10 @@
 body {
     margin: 0;
     overflow: hidden;
-  }
-  
+}
+
+#growthButton{
+    background-color: white;
+    position: absolute;
+}
+    
