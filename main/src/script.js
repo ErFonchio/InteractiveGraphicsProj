@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { initialize } from "./tree.js";
+import { initialize, growTree } from "./tree.js";
 import { Pane } from "tweakpane";
-import { random } from "mathjs";
+
+let NODE_DISTANCE = 0.2;
+let RANDOMNESS = 0.2;
 
 //initialize the pane for input management
 const pane = new Pane();
@@ -14,12 +16,11 @@ const axesHelper = new THREE.AxesHelper(2);
 scene.add(axesHelper);
 
 // add objects to the scene
-const cubeGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
 const cubeMaterial = new THREE.MeshBasicMaterial({ color: "brown" });
 
 // ADD tree axioms to the scene
-const { kb, box } = initialize();
-
+const { kb, box_list } = initialize();
 let axioms = []
 for (let i=0; i<kb.position.length; i++){
     let position = kb.position[i];
@@ -30,128 +31,36 @@ for (let i=0; i<kb.position.length; i++){
 }
 
 // Create box for random points
-const boxGeometry = new THREE.BoxGeometry(box.size, box.size, box.size);
-const boxMaterial = new THREE.MeshBasicMaterial({ color: "green", wireframe: true});
-const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-boxMesh.position.set(box.position[0], box.position[1], box.position[2]);
-scene.add(boxMesh);
+console.log(box_list);
+for (let i=0; i<box_list.length; i++){
+    let box = box_list[i];
+    const boxGeometry = new THREE.BoxGeometry(box.size, box.size, box.size);
+    const boxMaterial = new THREE.MeshBasicMaterial({ color: "green", wireframe: true});
+    const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+    boxMesh.position.set(box.position[0], box.position[1], box.position[2]);
+    scene.add(boxMesh);
+}
 
 // Add random points
 let random_points = []
 const pointGeometry = new THREE.SphereGeometry(0.1, 8, 8);
 const pointMaterial = new THREE.MeshBasicMaterial({ color: "green" });
-for (let i=0; i<box.points.length; i++){
-    let point = box.points[i];
-    const pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
-    pointMesh.position.set(point[0], point[1], point[2]);
-    random_points.push(pointMesh);
-    scene.add(pointMesh);
+for (let i=0; i<box_list.length; i++){
+    let box = box_list[i];
+    for (let i=0; i<box.points.length; i++){
+        let point = box.points[i];
+        const pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
+        pointMesh.position.set(point[0], point[1], point[2]);
+        random_points.push(pointMesh);
+        scene.add(pointMesh);
+    }
 }
 
 pane.addButton({
     title: "Grow Tree",
 }).on("click", () => {
-    growTree();
+    treecycle();
 });
-
-var trunk_points = [...axioms];
-var remaining_attraction_points = [...random_points];
-
-function computeMinimumDistance(kill_distance=1, attraction_distance=25){
-
-    let minimum_distance_dictionary = new Map();
-    let points_to_remove = [];
-    for (let i=0; i<remaining_attraction_points.length; i++){
-
-        let attraction_point = remaining_attraction_points[i];
-        let minimum_point = null;
-        let min_distance = 99999;
-        for (let j=0; j<trunk_points.length; j++){
-            let trunk_point = trunk_points[j];
-            let distance = attraction_point.position.distanceTo(trunk_point.position);
-            //If the trunk point is too far from attraction distance, we don't want to add it.
-            if (distance > attraction_distance){
-                continue;
-            }
-            if (distance < min_distance){
-                min_distance = distance;
-                minimum_point = trunk_point;
-            }
-        }
-        //If the point is too close to the trunk point, we don't want to add it. We erase it.
-        if (min_distance <= kill_distance){
-            points_to_remove.push(attraction_point);
-            continue;
-        }
-        //If the point cannot reach the trunk point, we will just pass
-        if (minimum_point === null){
-            continue;
-        }
-        if (minimum_distance_dictionary.has(minimum_point)){
-            minimum_distance_dictionary.get(minimum_point).push(attraction_point);
-        }
-        else{
-            minimum_distance_dictionary.set(minimum_point, [attraction_point]);
-        }
-    }
-    
-    //Actually remove the already too close points
-    remaining_attraction_points = remaining_attraction_points.filter(point => !points_to_remove.includes(point));
-    scene.remove(...points_to_remove);
-    console.log("Remaining attraction points: ", remaining_attraction_points.length);   
-    return minimum_distance_dictionary;
-}
-
-function computeAverageDistance(trunk, trunk_to_points){
-    let average_distance_vector = [0, 0, 0]; //We are in three dimensions
-    let trunk_position = trunk.position;
-    //The expression is
-    /*
-    [x_dist, y_dist, z_dist] = sum {(s-v) / norm(s-v)}
-    where s is the trunk point vector and v is the attraction point vector
-    */
-    let attractor_points = trunk_to_points.get(trunk); //This is a list of attractor
-    for (let i=0; i<attractor_points.length; i++){
-        let attraction_position = attractor_points[i].position;
-        let distance = attraction_position.distanceTo(trunk_position);
-        let temp = [attraction_position.x - trunk_position.x,
-                    attraction_position.y - trunk_position.y,
-                    attraction_position.z - trunk_position.z
-                    ];
-        temp = temp.map((x) => x/distance);
-        //Finally add the computed distance
-        average_distance_vector[0] += temp[0];
-        average_distance_vector[1] += temp[1];
-        average_distance_vector[2] += temp[2];
-    }
-    return average_distance_vector;
-
-}
-
-const growTree = (node_distance=0.2, randomness=0.2) => {
-    //From every random point, find the closest trunk point
-    let trunk_to_points = computeMinimumDistance();
-    //console.log("Trunk involved: ",trunk_to_points);
-    //Then i compute the average distance between the trunk points and the random points
-    for (const key of trunk_to_points.keys()){
-        //console.log("Processing trunk point: ", key.position);
-        let average_distance = computeAverageDistance(key, trunk_to_points);
-        //Now we compute the norm to normalize the vector
-        let norm = Math.sqrt(average_distance[0]**2 + average_distance[1]**2 + average_distance[2]**2);
-        //Normalize the vector
-        average_distance = average_distance.map((x) => x/norm);
-
-        //Now let's create a new branch
-        const cubeMesh = new THREE.Mesh(cubeGeometry, cubeMaterial);
-        cubeMesh.position.set(key.position.x + average_distance[0]*node_distance + randomness*(Math.random()-0.5),
-                              key.position.y + average_distance[1]*node_distance + randomness*(Math.random()-0.5),
-                              key.position.z + average_distance[2]*node_distance + randomness*(Math.random()-0.5));
-        scene.add(cubeMesh);
-        trunk_points.push(cubeMesh);
-        
-    }
-}
-
 
 // initialize the camera
 const camera = new THREE.PerspectiveCamera(
@@ -189,5 +98,24 @@ const renderloop = () => {
   renderer.render(scene, camera);
   window.requestAnimationFrame(renderloop);
 };
+
+var trunk_points = [...axioms];
+var remaining_attraction_points = [...random_points];
+
+const treecycle = () => {
+    while (remaining_attraction_points.length > 0){
+        let {trunk_points_, remaining_attraction_points_ret, cubeMeshesToAdd, points_to_remove} = 
+        growTree(trunk_points, remaining_attraction_points, NODE_DISTANCE, RANDOMNESS);
+        trunk_points = trunk_points_;
+        remaining_attraction_points = remaining_attraction_points_ret;
+        updateScene(cubeMeshesToAdd, points_to_remove);
+    }
+    
+}
+
+const updateScene = (cubeMeshesToAdd, points_to_remove) => {
+    scene.remove(...points_to_remove);
+    scene.add(...cubeMeshesToAdd);
+}
 
 renderloop();
