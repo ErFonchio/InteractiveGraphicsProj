@@ -31,8 +31,13 @@ export class skyScene {
         
         this.sky.material.uniforms['sunPosition'].value.copy(this.sun);
         this.directionalLight.position.copy(this.sun);
-        
-        this.update = function (time) {
+
+        this.toggle_sky = (enable) => {
+            console.log("Sky enabled");
+            enable? scene.add(this.sky) : scene.remove(this.sky);
+            
         }
+        
+        this.update = function (time) {}
     }
 }

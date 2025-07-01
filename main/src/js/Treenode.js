@@ -27,7 +27,7 @@ export class ScheletonLine{
         this.associated_nodes = [];
         this.branch_stiffness = 0;
 
-        this.computeStiffness = function(threshold){
+        this.computeStiffness = function(threshold, stiffnessExponent){
             let sum = 0;
             for (let i=0; i<this.associated_nodes.length; i++){
                 let nodeMesh = this.associated_nodes[i].mesh;
@@ -39,8 +39,6 @@ export class ScheletonLine{
 
             // Calcola la media
             let averageSize = sum / this.associated_nodes.length;
-
-            const stiffnessExponent = 1.6; 
             this.branch_stiffness = Math.pow(averageSize, stiffnessExponent);
 
         }

@@ -12,10 +12,9 @@ export class TreeScene {
 
         const NODE_DISTANCE = 0.2;
         const DELTA_TIME = 0.01;
-        const ELASTIC_CONSTANT = 55.4;
-        const WIND_MAGNITUDE = 10.5;
+        this.ELASTIC_CONSTANT = 55.4;
+        this.branch_stiffness = 2.6;
         const THRESHOLD_BRANCH_RESISTANCE = 3.5;
-        const LEAF_RESISTANCE = 0.01;
         const ERROR_TOLERANCE = 0.5;
 
         const icogeometry = new THREE.IcosahedronGeometry(3.0, 0); // raggio 1, dettaglio 0
@@ -76,12 +75,20 @@ export class TreeScene {
         this.leaves = addLeaves(children);
         [this.scheletonmap, this.first_line] = buildTreeStructure(this.treemap);
         associateBlocksToLines(this.treemap, this.scheletonmap);
-        this.scheletonmap = associateStiffnessToLines(this.scheletonmap, THRESHOLD_BRANCH_RESISTANCE);
+        this.scheletonmap = associateStiffnessToLines(this.scheletonmap, THRESHOLD_BRANCH_RESISTANCE, this.branch_stiffness);
 
-        function associateStiffnessToLines(scheletonmap, threshold){
+        this.change_stiffness = (value) => {
+            console.log("Changing stiffness");
+            for (let key of this.scheletonmap.keys()){
+                let branch = this.scheletonmap.get(key);
+                branch.computeStiffness(THRESHOLD_BRANCH_RESISTANCE, value);
+            }
+        }
+
+        function associateStiffnessToLines(scheletonmap, threshold, branch_stiffness){
             for (let key of scheletonmap.keys()){
                 let line = scheletonmap.get(key);
-                line.computeStiffness(threshold);
+                line.computeStiffness(threshold, branch_stiffness);
             }
             return scheletonmap;
         }
@@ -367,10 +374,6 @@ export class TreeScene {
             }
         }
 
-        this.updateBlockPosition = (time) => {
-            this.updateScheletonPosition(time);
-            this.updateLeavesPosition(time);
-        }
 
         this.updateScheletonPosition = (time) => {
             let queue = [{
@@ -384,7 +387,6 @@ export class TreeScene {
 
                 // Lunghezza originale
                 const originalVector = segment.original_ending_position.clone().sub(segment.original_starting_position);
-                const originalLength = originalVector.length();
 
                 // Posizione attuale
                 const positions = segment.mesh.geometry.attributes.position.array;
@@ -408,7 +410,7 @@ export class TreeScene {
 
                 // Calcolo forza elastica (posizione attuale rispetto alla posizione a riposo)
                 let displacement = actualEnd.clone().sub(currentEnd);
-                let elasticForce = displacement.multiplyScalar(-ELASTIC_CONSTANT);
+                let elasticForce = displacement.multiplyScalar(-this.ELASTIC_CONSTANT);
 
                 // Calcolo forza del vento
                 const windForceConstant = new THREE.Vector3().crossVectors(localWindVector, originalVector).length();
@@ -475,44 +477,6 @@ export class TreeScene {
         }
 
 
-        this.updateBranchPosition = function (time){
-            for (let key of this.treemap.keys()){
-                let node = this.treemap.get(key);
-                //Se il nodo ha un genitore, significa che posso muoverlo e applicare la forza elastica
-                if (node.hasParent()){
-                    const parentPosition = node.parent.mesh.position.clone();
-                    const childPosition = node.mesh.position.clone();
-                    const differenceVector = childPosition.sub(parentPosition);
-
-                    //The elastic constant depends on the size of the branch
-                    //If the size of the branch is too small, i choose a limit higher value
-                    const trunk_size_constant = Math.max(getMeshSize(node.mesh).x, THRESHOLD_BRANCH_RESISTANCE);
-
-                    //Compute difference between actual position and original position
-                    let x = node.mesh.position.clone().sub(node.original_position.clone());
-                    const elasticForce = x.multiplyScalar(-trunk_size_constant*ELASTIC_CONSTANT); //Elastic force formula
-                    
-                    let noiseX = this.noise.getPerlin3(node.mesh.position.x, node.mesh.position.z, time);
-                    let noiseZ = this.noise.getPerlin3(node.mesh.position.z, node.mesh.position.x, time);
-
-                    // Direzione locale del vento
-                    let localWindVector = new THREE.Vector3(noiseX, 0, noiseZ).normalize();
-
-                    // Componente perpendicolare (cross product)
-                    const windForceConstant = new THREE.Vector3().crossVectors(localWindVector, differenceVector).length();
-                    const appliedWindForce = localWindVector.multiplyScalar(windForceConstant*WIND_MAGNITUDE);
-
-                    // Somma delle forze
-                    const total_force = elasticForce.add(appliedWindForce);
-
-                    node.mesh.position.x += DELTA_TIME*total_force.x;
-                    node.mesh.position.y += DELTA_TIME*total_force.y;
-                    node.mesh.position.z += DELTA_TIME*total_force.z;
-
-                }
-            }
-        }
-
         this.updateLeavesPosition = function (time){
             if (this.leaves.length === 0){
                 return;
@@ -522,37 +486,43 @@ export class TreeScene {
                 const leaf = tuple[0]; //Mesh
                 const original_leaf_position = tuple[1]; //Node
                 const father = tuple[2];
-                //Se il nodo ha un genitore, significa che posso muoverlo e applicare la forza elastica
-                const parentPosition = father.mesh.position.clone();
-                const childPosition = leaf.position.clone();
-                const differenceVector = childPosition.sub(parentPosition);
-
-                //The elastic constant depends on the size of the branch
-                //If the size of the branch is too small, i choose a limit higher value
-                const trunk_size_constant = LEAF_RESISTANCE;
-
-                //Compute difference between actual position and original position
-                let x = leaf.position.clone().sub(original_leaf_position.clone());
-                const elasticForce = x.multiplyScalar(-trunk_size_constant*ELASTIC_CONSTANT); //Elastic force formula
-                
-                let noiseX = this.noise.getPerlin3(leaf.position.x, leaf.position.z, time);
-                let noiseZ = this.noise.getPerlin3(leaf.position.x, leaf.position.z, time);
-
-                // Direzione locale del vento
-                let localWindVector = new THREE.Vector3(noiseX, 0, noiseZ).normalize().multiplyScalar(this.noise.getWindStrenght());
-
-                // Componente perpendicolare (cross product)
-                const windForceConstant = new THREE.Vector3().crossVectors(localWindVector, differenceVector).length();
-                const appliedWindForce = localWindVector.clone().multiplyScalar(windForceConstant);
-
-                // Somma delle forze
-                const total_force = elasticForce.add(appliedWindForce);
-
-                leaf.position.x += DELTA_TIME*total_force.x;
-                leaf.position.y += DELTA_TIME*total_force.y;
-                leaf.position.z += DELTA_TIME*total_force.z;
+                leaf.position.copy(father.mesh.position);
 
             }
+        }
+
+        this.toggle_leaves = (enable) => {
+            console.log("Leaves enabled");
+            for (let i=0; i<this.leaves.length; i++){
+                let leafMesh = this.leaves[i][0];
+                enable? scene.add(leafMesh) : scene.remove(leafMesh);
+            }
+        }
+        this.toggle_trunk = (enable) => {
+            console.log("Trunk enabled");
+            for (let key of this.treemap.keys()){
+                let trunkMesh = key;
+                enable? scene.add(trunkMesh) : scene.remove(trunkMesh);
+            }
+        }
+        this.toggle_scheleton = (enable) => {
+            console.log("Scheleton enabled");
+            for (let key of this.scheletonmap.keys()){
+                let boneMesh = key;
+                if (enable){
+                    boneMesh.material.opacity = 1.0;
+                    scene.add(boneMesh);
+                }
+                else{
+                    boneMesh.material.opacity = 0.0;
+                    scene.remove(boneMesh);
+                }
+            }
+        }
+
+        this.updateBlockPosition = (time) => {
+            this.updateScheletonPosition(time);
+            this.updateLeavesPosition(time);
         }
 
         this.update = function (time) {

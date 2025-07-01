@@ -4,7 +4,7 @@ export class perlinNoise {
     constructor(){
         this.noise = new NOISE.Noise(Math.random());
         //I can access wind strengh outside the class
-        this.WIND_STRENGHT = 10.05;
+        this.WIND_STRENGHT = 25.4;
         const SPATIAL_FREQUENCY = 1.5;
         const TEMPORAL_FREQUENCY = 0.8;
 
@@ -19,6 +19,7 @@ export class perlinNoise {
         this.getWindStrenght = function (){
             return this.WIND_STRENGHT;
         }
+
     }
 
 }

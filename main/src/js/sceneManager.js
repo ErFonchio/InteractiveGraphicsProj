@@ -5,6 +5,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { skyScene } from './sceneSubjects/skyScene';
 import { TerrainScene } from './sceneSubjects/terrainScene';
 import { perlinNoise } from './perlinNoise';
+import { guiInterface } from './guiInterface';
+import { wind } from './windAudio';
 
 export function SceneManager(canvas) {
 
@@ -35,6 +37,7 @@ export function SceneManager(canvas) {
 
         return scene;
     }
+
 
     function buildRender() {
         const renderer = new THREE.WebGLRenderer({
@@ -74,13 +77,15 @@ export function SceneManager(canvas) {
         // both to the tree and to the grass
         const noise = new perlinNoise();
         const texLoader = new THREE.TextureLoader();
+        const windObj = new wind(camera);
         const sceneSubjects = [
             new GeneralLights(scene),
             new TreeScene(scene, noise),
             new skyScene(scene),
             new TerrainScene(scene, noise, texLoader),
         ];
-
+        const gui_interface = new guiInterface(noise, sceneSubjects[1], sceneSubjects[2], sceneSubjects[3], windObj);
+        
         return sceneSubjects;
     }
 

@@ -8,7 +8,7 @@ export class GrassBlade {
         this.texLoader = texLoader;
         const WIDTH = 0.3;
         const min_height = 2.5;
-        const max_height = 5.0;
+        const max_height = 4.0;
         const wind_constant = 100
 
 
